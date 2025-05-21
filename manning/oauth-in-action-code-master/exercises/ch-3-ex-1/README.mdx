@@ -1,0 +1,24 @@
+## client
+
+1. GET / => render client/index.html
+
+- the client index page with a link to the client's /authorize handler
+
+2. GET /authorize (from an <a href="/authorize">Get OAuth Token</a> link) => redirect to server/authorize with query params (client_id, redirect_uri, state, response_type)
+
+- the client's /authorize handler which redirects to the server's /authorize handler with a query string containing:
+  - response_type: "code"
+  - client_id
+  - redirect_uri
+  - state
+
+## server
+
+3. GET /authorize => render server/approve.html with query params (client_id, redirect_uri, scope, state)
+
+- the server's /authorize handler which renders the server/approve.html page with the query params
+- the server/approve.html page with a form to approve the client's request which POSTs to the server's /approve handler with the query params
+
+4. POST /approve => redirect to client's redirect_uri with a query string containing the code
+
+- the server's /approve handler which redirects to the client's redirect_uri with a query string containing the code

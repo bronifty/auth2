@@ -1,0 +1,344 @@
+# Auth
+
+- a manning 4 part liveproject beginning with [build an auth server](https://www.manning.com/liveproject/build-an-authorization-server)
+- here is my current understanding of how oauth works
+  ![JS Streams Observable](./media/oauth.png)
+
+- building out the first part of the auth server with the following endpoints and reading about how it is based on events got me to thiking perhaps it would make sense to get deeper into this area with some more background before i proceed
+
+  1. /.well-known/jwks.json
+  2. .well-known/openid-configuration
+
+## JS Node and Web Streams
+
+- [erick wendell mastering node streams](https://hotmart.com/en/club/masteringnodejsstreams/products/2105756/content/2OM01a8x76)
+- i jumped to this course and am bundling it with auth because i feel it may provide some good background material on events processing
+
+---
+
+```bash
+node --inspect authorizationServer.js
+chrome://inspect
+```
+
+## OAuth Flow State Management (code and token)
+
+1. client GET /authorize
+
+- create state
+- redirect to server /authorize with query:{state, client_id, redirect_uri, response_type: "code"}
+- now client global state looks like this:
+
+```js
+var client = {
+  client_id: "oauth-client-1",
+  client_secret: "oauth-client-secret-1",
+  redirect_uris: ["http://localhost:9000/callback"],
+};
+var state = "ameYD3YRqgEFkmfeQe9FRyIfdDcDuXKP";
+var access_token = null;
+var scope = null;
+```
+
+2. server GET /authorize
+
+- filter for matching client_id, redirect_uri, scopes
+- save query in requests[reqid]
+- now auth server global state looks like this:
+
+```js
+/*** current global state on auth server ***/
+var clients = [
+  {
+    client_id: "oauth-client-1",
+    client_secret: "oauth-client-secret-1",
+    redirect_uris: ["http://localhost:9000/callback"],
+    scope: "foo bar",
+  },
+];
+
+// requests object
+var requests = {
+  nrOdghFy: {
+    response_type: "code",
+    client_id: "oauth-client-1",
+    redirect_uri: "http://localhost:9000/callback",
+    state: "gHddFXaImCl0ao6IGd1mktiDPTeY4hW4",
+  },
+};
+
+var codes = {};
+
+/*** end global state ***/
+```
+
+- render approve form with client, scope, and reqid
+- user POSTS form to /approve endpoint with user, reqid, and scope
+
+3. server POST /approve
+
+- use reqid from POST request to pull that query object out from the previously saved requests object and in this implementation we are referring to it as query, which matches the original query parameters object from the client's /authorize request
+
+```js
+var query = {
+    response_type: "code",
+    client_id: "oauth-client-1",
+    redirect_uri: "http://localhost:9000/callback",
+    state: "gHddFXaImCl0ao6IGd1mktiDPTeY4hW4",
+  },
+```
+
+- now we have retrieved the query from the client and passed it through a user (resource owner) authorization endpoint, so we can remove the original request object and upgrade it into a code object where it will be subsequently upgraded to a token
+- all these objects are single use but the token is reusable (basically an auto-generated api key)
+
+  - the flow is:
+    1. query (from client /authorize)
+    2. request (from server /authorize)
+    3. code (from server /approve)
+    4. token (from server /token)
+
+- delete requests[reqid]
+- create code
+- grab user and scope from POST request to /approve
+- insert code, user and scope with the query into the codes object
+
+```js
+delete requests[reqid];
+var code = randomstring.generate(8);
+codes[code] = {
+  authorizationEndpointRequest: query,
+  scope: scope,
+  user: user,
+};
+```
+
+- now auth server global state looks like this:
+
+```js
+/*** current global state on auth server ***/
+var clients = [
+  {
+    client_id: "oauth-client-1",
+    client_secret: "oauth-client-secret-1",
+    redirect_uris: ["http://localhost:9000/callback"],
+    scope: "foo bar",
+  },
+];
+
+// requests object
+var requests = {};
+
+var codes = {
+  1ls3aXXd: {
+    authorizationEndpointRequest: {
+      response_type: "code",
+      client_id: "oauth-client-1",
+      redirect_uri: "http://localhost:9000/callback",
+      state: "ameYD3YRqgEFkmfeQe9FRyIfdDcDuXKP",
+    },
+    scope: [],
+    user: "alice",
+  },
+};
+
+/*** end global state ***/
+```
+
+- redirect user to client's redirect_uri with code and state as query params
+
+```js
+var urlParsed = new URL(query.redirect_uri);
+urlParsed.searchParams.set("code", code);
+urlParsed.searchParams.set("state", query.state);
+res.redirect(urlParsed.toString());
+console.log(
+  "in POST /approve; urlParsed.toString()!!!! ",
+  urlParsed.toString()
+);
+//in POST /approve; urlParsed.toString()!!!!  http://localhost:9000/callback?code=1ls3aXXd&state=ameYD3YRqgEFkmfeQe9FRyIfdDcDuXKP
+```
+
+4. client GET /callback
+
+- now client global state looks like this (no update):
+
+```js
+var client = {
+  client_id: "oauth-client-1",
+  client_secret: "oauth-client-secret-1",
+  redirect_uris: ["http://localhost:9000/callback"],
+};
+var state = "ameYD3YRqgEFkmfeQe9FRyIfdDcDuXKP";
+var access_token = null;
+var scope = null;
+```
+
+- filter for matching state between request params and global client state
+- grab code from request params
+- POST to auth server /token endpoint with code, client creds, and redirect_uri
+- save access_token to client global state
+
+```js
+var code = req.query.code;
+
+var form_data = new URLSearchParams({
+  grant_type: "authorization_code",
+  code,
+  redirect_uri: client.redirect_uris[0],
+}).toString();
+var headers = {
+  "Content-Type": "application/x-www-form-urlencoded",
+  Authorization:
+    "Basic " + encodeClientCredentials(client.client_id, client.client_secret),
+};
+
+var tokRes = (async function () {
+  const response = await fetch(authServer.tokenEndpoint, {
+    method: "POST",
+    headers,
+    body: form_data,
+  });
+
+  // Convert fetch Response to match sync-request format
+  return {
+    statusCode: response.status,
+    getBody: async () => {
+      // const body = await response.json();
+      // return JSON.stringify(body);
+      return JSON.stringify(await response.json());
+    },
+  };
+})();
+
+console.log("Requesting access token for code %s", code);
+
+// Handle the Promise
+async function fetchResource() {
+  const response = await tokRes;
+  if (response.statusCode >= 200 && response.statusCode < 300) {
+    const body = JSON.parse(await response.getBody());
+    access_token = body.access_token;
+    console.log("Got access token: %s", access_token);
+    res.render("index", { access_token: access_token, scope: scope });
+  } else {
+    res.render("error", {
+      error:
+        "Unable to fetch access token, server response: " + response.statusCode,
+    });
+  }
+}
+fetchResource();
+```
+
+- now client global state looks like this:
+
+```js
+var client = {
+  client_id: "oauth-client-1",
+  client_secret: "oauth-client-secret-1",
+  redirect_uris: ["http://localhost:9000/callback"],
+};
+var state = "ameYD3YRqgEFkmfeQe9FRyIfdDcDuXKP";
+var access_token = uzXXRt0y9meUdNchv6B1LeIsTw63fKlv;
+var scope = null;
+```
+
+5. server POST /token
+
+- check auth in request against client creds in global state on auth server
+- filter for grant_type: "authorization_code"
+- pull code from codes object based on matching it with the code in the request
+- save code object and delete code from codes object
+- filter for matching client_id from request against client_id in the code object
+- create access_token
+- insert that into the database
+
+- now auth server global state looks like this:
+
+```js
+/*** current global state on auth server ***/
+var clients = [
+  {
+    client_id: "oauth-client-1",
+    client_secret: "oauth-client-secret-1",
+    redirect_uris: ["http://localhost:9000/callback"],
+    scope: "foo bar",
+  },
+];
+
+// requests object
+var requests = {};
+
+var codes = {};
+
+nosql.insert({
+  access_token: access_token,
+  client_id: clientId,
+  scope,
+});
+
+/*** end global state ***/
+```
+
+- send token response to client
+
+```js
+var token_response = {
+  access_token: access_token,
+  token_type: "Bearer",
+  scope: cscope,
+};
+
+res.status(200).json(token_response);
+```
+
+6. client POST /fetch_resource
+
+- use saved token to hit api
+
+```js
+var headers = {
+  authorization: `bearer ${access_token}`,
+};
+
+var tokRes = (async function () {
+  const response = await fetch(protectedResource, {
+    method: "post",
+    headers,
+  });
+  return {
+    statusCode: response.status,
+    getBody: async () => {
+      return JSON.stringify(await response.json());
+    },
+  };
+})();
+
+async function fetchResource() {
+  const response = await tokRes;
+  if (response.statusCode >= 200 && response.statusCode < 300) {
+    const body = JSON.parse(await response.getBody());
+    console.log("Got data: %s!!!!!!!!", body);
+    res.render("data", { resource: body });
+  } else {
+    res.render("error", {
+      error:
+        "Unable to fetch resource, server response: " + response.statusCode,
+    });
+  }
+}
+fetchResource();
+```
+
+### Oauth Flow Summary
+
+1. GET client.authorize
+2. redirect server.authorize
+3. render server.approve
+4. POST server.approve
+5. redirect client.callback
+6. POST server.token
+7. GET api.resource
+
+- in steps 1-5, client sends resource owner to server to authorize and get a code
+- in steps 6-7, client uses code and its own creds to get a token and use it to hit the api's protected resource endpoint
