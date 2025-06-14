@@ -1,19 +1,20 @@
 import { Link, Outlet } from "react-router";
 
-import type { Route } from "./+types/root";
 import "./app.css";
-import { useOAuth } from "./context";
+// import { useOAuth } from "./context";
 export default function Layout() {
-  const { clients, endpoints, requests, codes, tokens } = useOAuth();
+  // const { clients, endpoints, requests, codes, tokens } = useOAuth();
   return (
     <>
       <header>
         <Link to="/">Home</Link>
+        <br></br>
+        <Link to="/server-toggle">Server Toggle</Link>
       </header>
       <Outlet />
       <footer>
         <hr />
-        <p>
+        {/* <p>
           clients: {JSON.stringify(clients, null, 2)}
           <br />
           endpoints: {JSON.stringify(endpoints, null, 2)}
@@ -23,7 +24,7 @@ export default function Layout() {
           codes: {JSON.stringify(codes, null, 2)}
           <br />
           tokens: {JSON.stringify(tokens, null, 2)}
-        </p>
+        </p> */}
       </footer>
     </>
   );
