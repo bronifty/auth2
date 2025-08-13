@@ -2,8 +2,19 @@
 
 - a manning 4 part liveproject beginning with [build an auth server](https://www.manning.com/liveproject/build-an-authorization-server)
 - here is my current understanding of how oauth works
-  ![OAuth](./media/oauth.png)
+  ![JS Streams Observable](./media/oauth.png)
 
+- building out the first part of the auth server with the following endpoints and reading about how it is based on events got me to thiking perhaps it would make sense to get deeper into this area with some more background before i proceed
+
+  1. /.well-known/jwks.json
+  2. .well-known/openid-configuration
+
+## JS Node and Web Streams
+
+- [erick wendell mastering node streams](https://hotmart.com/en/club/masteringnodejsstreams/products/2105756/content/2OM01a8x76)
+- i jumped to this course and am bundling it with auth because i feel it may provide some good background material on events processing
+
+---
 
 ```bash
 node --inspect authorizationServer.js
@@ -331,21 +342,3 @@ fetchResource();
 
 - in steps 1-5, client sends resource owner to server to authorize and get a code
 - in steps 6-7, client uses code and its own creds to get a token and use it to hit the api's protected resource endpoint
-
-## Custom React Router OAuth Components List
-
-- client page
-- cient authorize function
-- server authorize page
-- server approve function
-- client callback function
-- server token function
-
-- pages:
-  - client (homepage)
-  - server (user approve form)
-- functions:
-  - client authorize (build redirect url with query params)
-  - server approve (create code)
-  - client callback (exchange code for token)
-  - server token (create token)
